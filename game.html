@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training 99</title>
+</head>
+
+<body>
+    <!-- 三段式的載入 -->
+    <div id="loading">
+        Loading
+    </div>
+    <div id="menu" style="display: none;">
+        <button onclick="startGame();">Strat</button>
+    </div>
+    <div id="game" style="display: none;">
+        <canvas id="cvs" width="600" height="450" style="border: 1px solid black"></canvas>
+    </div>
+    <script src="lib.js"></script>
+    <script>
+
+        // 初始化資料
+        ga.ctx = document.querySelector("#cvs").getContext("2d");
+        ga.audio = new AudioContext();
+        loadResources();
+        function loadResources() {
+            loadImages();
+            loadSounds();
+            // 不可將start menu寫在這裡
+
+        }
+        function loadImages() {
+            // for(let 變數名稱 in 物件)
+            for (let name in ga.res.imgs) {
+                loadImage(name, ga.res.imgs[name]);
+            }
+        }
+        function loadImage(name, src) {
+            let img = new Image();
+            img.src = src;
+            img.addEventListener("load", function () {
+                ga.res.imgs[name] = img;
+                resourceLoaded();
+            });
+        }
+        function loadSounds() {
+            for (let name in ga.res.sounds) {
+                loadSound(name, ga.res.sounds[name]);
+            }
+        }
+        function playsound(buffer) {
+            // 建立 BufferSource 物件
+            let source = audio.createBufferSource();
+            //source.buffer = 某個 AudioBuffer 物件;
+            source.buffer = buffer;
+            source.connect(audio.destination); // 串接到音效環境的尾巴
+            source.start(0); // 0 為等待0秒(立刻)播放
+        }
+        function loadSound(name, src) {
+            let xhr = new XMLHttpRequest();
+            xhr.open("get", src);
+            xhr.responseType = "arraybuffer";
+            xhr.addEventListener("load", function () {
+                ga.audio.decodeAudioData(xhr.response, function (buffer) {
+                    ga.res.sounds[name] = buffer;
+                    resourceLoaded();
+                });
+            });
+            xhr.send();
+        }
+        function resourceLoaded() {
+            ga.res.loaded++;
+            let precentage = 100 * ga.res.loaded / ga.res.total;
+            let loading = document.querySelector("#loading");
+            loading.innerHTML = precentage + '%';
+            if (ga.res.loaded == ga.res.total) {
+                startMenu();
+            }
+        }
+        function startMenu() {
+            document.querySelector("#loading").style.display = "none";
+            document.querySelector("#menu").style.display = "block";
+            document.querySelector("#game").style.display = "none";
+        }
+        function startGame() {
+            // 處理HTML DOM
+            document.querySelector("#menu").style.display = "none";
+            document.querySelector("#game").style.display = "block";
+            // 加入鍵盤控制
+            window.addEventListener("keydown", keydown);
+            window.addEventListener("keyup", keyup);
+            // 初始化遊戲資料(restart)
+            ga.game.circle = 0;
+            ga.game.key = {
+                space: false, left: false, top: false, right: false, bottom: false
+            };
+            ga.game.plane = new ga.lib.Plane();
+            ga.game.bulletSystem = new ga.lib.bulletSystem(300, 0);
+            ga.game.particles = [ga.game.plane, ga.game.bulletSystem];
+            // 啟動遊戲
+            ga.game.id = window.setInterval(refreshGame, 10)
+
+
+        }
+        function keydown(e) {
+            let code = e.keyCode;
+            let key = ga.game.key;
+            if (code == 37) { // left
+                key.left = true;
+            }
+            else if (code == 38) { // top
+                key.top = true;
+            }
+            else if (code == 39) { // right
+                key.right = true;
+            }
+            else if (code == 40) { // bottom
+                key.bottom = true;
+            }
+            else if (code == 32) { // space
+                key.space = true;
+            }
+        }
+
+        function keyup(e) {
+            let code = e.keyCode;
+            let key = ga.game.key;
+            if (code == 37) { // left
+                key.left = false;
+            }
+            else if (code == 38) { // top
+                key.top = false;
+            }
+            else if (code == 39) { // right
+                key.right = false;
+            }
+            else if (code == 40) { // bottom
+                key.bottom = false;
+            }
+            else if (code == 32) { // space
+                key.space = false;
+            }
+        }
+        function refreshGame() {
+            let particles = ga.game.particles;
+            // 更新資料
+            for (let i = 0; i < particles.length; i++) {
+                let die = particles[i].update();
+                if (die) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+            // 清空畫面
+            ga.ctx.fillRect(0, 0, ga.ctx.canvas.width, ga.ctx.canvas.height);
+            // 重畫
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].render();
+            }
+            // 更新回合數
+            ga.game.circle++;
+            // 檢查遊戲是否結束
+            if (checkExplosion()) {
+                gameOver();
+            }
+        }
+        function gameOver() {
+            //處理爆炸畫面
+            let plane = ga.game.plane;
+            ga.ctx.drawImage(ga.res.imgs.explosion,
+                plane.x - 20, plane.y - 20, 50, 50
+            )
+            //處理音效
+            //playsound(ga.res.sounds.explosion);
+            //結束遊戲
+            window.clearInterval(ga.game.id);
+            // 點擊一下重新來過
+            ga.ctx.canvas.addEventListener("click", startGame);
+            // 清除鍵盤控制
+            window.removeEventListener("keydown", keydown);
+            window.removeEventListener("keyup", keyup);
+        }
+        function checkExplosion() {
+            let bullets = ga.game.bulletSystem.bullets;
+            let plane = ga.game.plane;
+            // 檢查每顆子彈有沒有撞到飛機
+            for (let i = 0; i < bullets.length; i++) {
+                let threshold = bullets[i].size + (plane.size / 2);
+                let distance = Math.sqrt(
+                    Math.pow(plane.x - bullets[i].x, 2) +
+                    Math.pow(plane.y - bullets[i].y, 2)
+                );
+                if (distance <= threshold) {
+                    return true; //撞到了   
+                }
+            }
+            return false;
+        }
+
+    </script>
+</body>
+
+</html>
